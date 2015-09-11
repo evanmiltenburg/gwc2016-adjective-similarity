@@ -70,10 +70,17 @@ def attribute_distance_5(a,b):
     l2 = attribute_set(b)
     return average_distance(l1,l2)
 
-def correlation(pairs, distance_function):
+def correlation(distance_function, pairs=pairs):
     similarity_list = []
     distance_list = []
     for a,b in pairs:
         similarity_list.append(similarity(a,b))
         distance_list.append(distance_function(a,b))
     return spearmanr(similarity_list, distance_list)
+
+for f in [  attribute_distance_1,
+            attribute_distance_1,
+            attribute_distance_1,
+            attribute_distance_1,
+            attribute_distance_1]:
+    correlation(f)

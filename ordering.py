@@ -8,7 +8,7 @@ import numpy as np
 import csv
 from collections import defaultdict
 from nltk.corpus.reader.wordnet import WordNetCorpusReader
-from itertools import product
+from itertools import product, combinations
 from scipy.stats import pearsonr, spearmanr
 from scipy.spatial.distance import cosine
 from math import floor
@@ -29,7 +29,7 @@ def score_with_tie_correction(ab_pred, xy_pred, ab_gold, xy_gold):
     if g == p: return 1
     return 0
 
-def accuracy(gold, predicted, score_func=score_with_tie_correction):
+def accuracy(gold, predicted, score_func):
     '''
     Accept two lists of similarity scores and output ordering accuracy.
     There are two possible scoring functions, see "score_naive" and
@@ -118,6 +118,26 @@ def evaluate_groups(gold, predicted, score_func=score_with_tie_correction, group
 
 # Own functions:
 
+def accuracy_noties(gold, pred1, pred2):
+    count           = 0
+    pred1_correct   = 0
+    pred2_correct   = 0
+    for i,j in combinations(list(range(len(gold))), 2):
+        if gold[i] == gold[j] or pred1[i] == pred1[j] or pred2[i] == pred2[j]:
+            continue
+        result       = np.sign(gold[i] - gold[j])
+        pred1_result = np.sign(pred1[i] - pred1[j])
+        pred2_result = np.sign(pred2[i] - pred2[j])
+        # Update counts:
+        count         += 1
+        pred1_correct += int(pred1_result == result)
+        pred2_correct += int(pred2_result == result)
+    acc1 = 100 * (float(pred1_correct)/count)
+    acc2 = 100 * (float(pred2_correct)/count)
+    print("Count: " + str(count))
+    print("Accuracy 1: " + str(acc1))
+    print("Accuracy 2: " + str(acc2))
+
 def results_to_table(res1,res2,name1,name2):
     d1 = dict(res1)
     d2 = dict(res2)
@@ -158,6 +178,25 @@ def similarity(a,b):
     "Get the similarity between words A and B."
     return float(entries[(a,b)]['SimLex999'])
 
+differences = [abs(x-y) for x,y in combinations([similarity(a,b) for a,b in entries],2)]
+max_difference = max(differences)
+
+def score_with_linear_tie_correction(ab_pred, xy_pred, ab_gold, xy_gold):
+    '''
+    Score a similarity measure against a gold standard on the comparison of
+    pairs of pairs (a,b) and (x,y)
+    '''
+    g = np.sign(ab_gold-xy_gold)
+    p = np.sign(ab_pred-xy_pred)
+    if g == 0:
+        return 0.5
+    elif p == 0:
+        return 1 - (abs(ab_gold-xy_gold)/max_difference)
+    elif g == p:
+        return 1
+    else:
+        return 0
+
 # Load vector data:
 adjs = {w for pair in entries for w in pair}
 with open('./resources/Predict-vector/EN-wform.w.5.cbow.neg10.400.subsmpl.txt') as f:
@@ -166,6 +205,9 @@ with open('./resources/Predict-vector/EN-wform.w.5.cbow.neg10.400.subsmpl.txt') 
         row = line.split('\t')
         if row[0] in adjs:
             vectors[row[0]] = list(map(float,row[1:]))
+
+
+
 
 ################################################################################
 # Load lesk similarity data:
@@ -366,22 +408,34 @@ def inverse(l):
     maximal = max(l) + 0.1
     return list(map(lambda x: maximal-x, l))
 
+################################################################################
+# Print ALL the results!
+
 corr = str(spearmanr(wordnet_list,similarity_list)[0])
-acc  = str(accuracy(similarity_list, inverse(wordnet_list)))
+acc  = str(accuracy(similarity_list, inverse(wordnet_list),score_with_tie_correction))
 print('Results for WordNet alone (subset): ' + corr)
 print('Results with ordering accuracy:     ' + acc + '\n')
 wordnet_results_subset = evaluate_groups(similarity_list,inverse(wordnet_list))
+acc  = str(accuracy(similarity_list,inverse(wordnet_list),score_with_linear_tie_correction))
+print('Results with ordering accuracy (linear tie correction): ' + acc + '\n')
+
 
 corr = str(spearmanr(vectors_list,similarity_list)[0])
-acc  = str(accuracy(similarity_list,inverse(vectors_list)))
+acc  = str(accuracy(similarity_list,inverse(vectors_list),score_with_tie_correction))
 print('Results for the vectors alone (subset): ' + corr)
 print('Results with ordering accuracy:         ' + acc + '\n')
 vector_results_subset = evaluate_groups(similarity_list,inverse(vectors_list))
+acc  = str(accuracy(similarity_list,inverse(vectors_list),score_with_linear_tie_correction))
+print('Results with ordering accuracy (linear tie correction): ' + acc + '\n')
 
 plt.clf()
 df = pd.DataFrame({'WordNet': wordnet_list, 'Vectors': vectors_list})
 g = sns.lmplot(x="WordNet", y="Vectors", data=df)#, markers=None)
 plt.savefig('./images/regression_wordnet_vectors_subset.pdf')
+
+
+print("Remove ties (subset): 1. WordNet, 2. Vectors")
+accuracy_noties(similarity_list, inverse(wordnet_list), inverse(vectors_list))
 
 ################################################################################
 # Plot intermediate results:
@@ -390,12 +444,21 @@ plt.clf()
 df = results_to_df(wordnet_results_subset,vector_results_subset,'WordNet','Vectors')
 plot(df,'./images/wordnet_vectors_subset.pdf')
 
+print("With tie correction:")
 results_to_table(wordnet_results_subset,vector_results_subset, 'WordNet', 'Vectors')
 
+wordnet_results_subset_linear = evaluate_groups(similarity_list,
+                                                inverse(wordnet_list),
+                                                score_with_linear_tie_correction)
+vector_results_subset_linear = evaluate_groups(similarity_list,
+                                                inverse(vectors_list),
+                                                score_with_linear_tie_correction)
+print("With *linear* tie correction:")
+results_to_table(wordnet_results_subset_linear,vector_results_subset_linear, 'WordNet', 'Vectors')
 
 
 corr = str(spearmanr(lesk_list,similarity_list)[0])
-acc  = str(accuracy(similarity_list,lesk_list))
+acc  = str(accuracy(similarity_list,lesk_list,score_with_tie_correction))
 print('Results for lesk alone (subset): ' + corr)
 print('Results with ordering accuracy:  ' + acc + '\n')
 
@@ -406,13 +469,15 @@ for a,b in not_in_wordnet:
     lesk_list.append(lesk_dict[(a,b)])
 
 corr = str(spearmanr(vectors_list,similarity_list)[0])
-acc  = str(accuracy(similarity_list,inverse(vectors_list)))
+acc  = str(accuracy(similarity_list,inverse(vectors_list),score_with_tie_correction))
 print('Results for the vectors alone: ' + corr)
 print('Results with ordering accuracy:  ' + acc + '\n')
+acc  = str(accuracy(similarity_list,inverse(vectors_list), score_with_linear_tie_correction))
+print('Results with ordering accuracy (linear tie correction): ' + acc + '\n')
 vector_results = evaluate_groups(similarity_list,inverse(vectors_list))
 
 corr = str(spearmanr(lesk_list,similarity_list)[0])
-acc  = str(accuracy(similarity_list,lesk_list))
+acc  = str(accuracy(similarity_list,lesk_list,score_with_tie_correction))
 print('Results for lesk alone:         ' + corr)
 print('Results with ordering accuracy: ' + acc + '\n')
 
@@ -442,10 +507,15 @@ stats(wordnet_list,vectors_list)
 
 hybrid = order_list1(wordnet_list, vectors_list)
 corr = str(spearmanr(hybrid,similarity_list)[0])
-acc  = str(accuracy(similarity_list,inverse(hybrid)))
+acc  = str(accuracy(similarity_list,inverse(hybrid),score_with_tie_correction))
 print('Results for the hybrid approach (vectors, no ties): ' + corr)
 print('Results with ordering accuracy: ' + acc + '\n')
+acc  = str(accuracy(similarity_list,inverse(hybrid),score_with_linear_tie_correction))
+print('Results with ordering accuracy (linear tie correction): ' + acc + '\n')
+
 hybrid_results = evaluate_groups(similarity_list,inverse(hybrid))
+
+
 
 plt.clf()
 df = results_to_df(hybrid_results,vector_results,'Hybrid','Vectors')
@@ -460,7 +530,7 @@ plt.savefig('./images/regression_hybrid_vectors.pdf')
 
 hybrid = order_list2(wordnet_list, vectors_list)
 corr = str(spearmanr(hybrid,similarity_list)[0])
-acc  = str(accuracy(similarity_list,inverse(hybrid)))
+acc  = str(accuracy(similarity_list,inverse(hybrid),score_with_tie_correction))
 print('Results for the hybrid approach (vectors, with ties): ' + corr)
 print('Results with ordering accuracy: ' + acc + '\n')
 
@@ -471,6 +541,6 @@ print('Results for the hybrid approach (lesk): ' + corr)
 wordnet_noties = tiebreaker(wordnet_list,lesk_list,bool_reverse=True)
 hybrid = rank_scores(wordnet_noties, lesk_list)
 corr = str(spearmanr(hybrid,similarity_list)[0])
-acc  = str(accuracy(similarity_list,hybrid))
+acc  = str(accuracy(similarity_list,hybrid,score_with_tie_correction))
 print('Results for the hybrid approach (lesk, no ties): ' + corr)
 print('Results with ordering accuracy: ' + acc + '\n')

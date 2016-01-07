@@ -17,7 +17,8 @@ morphologically_related = {related_lemma.synset() for adjective in adjectives
 diagram = venn3_unweighted([attributes, direct_attributes, morphologically_related],
                 ['labeled as\nnoun.attribute', 'direct\nattributes', 'morphologically\nrelated nouns'])
 
-for patch in diagram.__dict__['patches']:
+for patch in diagram.patches:
     patch.set_edgecolor('k')
+    patch.set_facecolor('w') # remove this line for color diagram.
 
 plt.savefig('./images/venn.pdf')

@@ -18,3 +18,7 @@ modules are the following:
 3. Run the scripts in any order on the command line, using `python SCRIPTNAME.py`.
    Output should be printed to the console (or saved to the images folder).
    I used python 3, but it should work on python 2.7.x as well.
+
+### Animation
+
+![Adjective distance, animated](images/animated_distance.gif "Adjective distance, animated")

@@ -21,4 +21,4 @@ modules are the following:
 
 ### Animation
 
-![Adjective distance, animated](images/animated_distance.gif "Adjective distance, animated")
+<img src="images/animated_distance.gif" width="500px" alt="Adjective distance, animated">
